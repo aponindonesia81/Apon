@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>TradeGuard — Overtrading Protection</title>
+<style>
+  :root{
+    --bg:#090B14; --card:#15192B; --purple:#7B5CFF; --text:#FFFFFF; --muted:#9299B4;
+    --green:#2ECC71; --red:#FF5C5C; --amber:#FFCC80;
+  }
+  *{box-sizing:border-box}
+  html,body{max-width:100%;overflow-x:hidden}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',Inter,sans-serif;
+    padding:22px 18px 60px;
+    padding-top:calc(22px + env(safe-area-inset-top,0px));
+    padding-bottom:calc(60px + env(safe-area-inset-bottom,0px));
+  }
+  .wrap{max-width:480px;margin:0 auto}
+  h1{font-size:26px;margin:0;font-weight:800;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  .status{
+    margin-top:18px;padding:14px 16px;border-radius:12px;background:var(--card);
+    font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px
+  }
+  .status.active{color:var(--green)}
+  .status.locked{color:var(--red)}
+  .card{background:var(--card);border-radius:14px;padding:16px;margin-top:14px}
+  .card h2{font-size:15px;margin:0 0 12px;font-weight:800}
+  .row{display:flex;gap:10px;margin-top:10px}
+  button{
+    font-family:inherit;border:0;border-radius:10px;padding:13px;font-size:14px;
+    font-weight:700;cursor:pointer;transition:.15s;color:#fff
+  }
+  button:active{transform:scale(.97)}
+  .btn-profit{background:var(--green);flex:1}
+  .btn-loss{background:var(--red);flex:1}
+  .btn-zero{background:#3a4160;flex:1}
+  .btn-secondary{background:#232a45;width:100%;margin-top:8px}
+  .btn-primary{background:var(--purple);width:100%;margin-top:8px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}
+  input[type=number]{
+    width:100%;background:#0e1222;border:1px solid #262c48;color:#fff;
+    border-radius:8px;padding:10px 12px;font-size:14px
+  }
+  .checkbox-row{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--text)}
+  .checkbox-row input{width:18px;height:18px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+  .stat{background:#0e1222;border-radius:10px;padding:10px;text-align:center}
+  .stat b{display:block;font-size:20px}
+  .stat span{font-size:11px;color:var(--muted)}
+  .note{font-size:12px;color:var(--amber);margin-top:16px;line-height:1.6}
+  .lock-overlay{
+    position:fixed;inset:0;z-index:999;background:rgba(9,11,20,.96);
+    backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;
+    flex-direction:column;text-align:center;padding:30px
+  }
+  .lock-overlay.open{display:flex}
+  .lock-overlay .lockicon{font-size:46px;margin-bottom:10px}
+  .lock-overlay h2{font-size:22px;margin:0 0 8px}
+  .lock-overlay p{color:var(--muted);font-size:13px;max-width:320px}
+  .timer{font-size:38px;font-weight:800;color:var(--red);margin:18px 0;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>◈ TradeGuard</h1>
+  <div class="sub">Overtrading self-control — web version</div>
+
+  <div class="status active" id="status">Status: 🟢 ACTIVE — monitoring ready</div>
+
+  <div class="card">
+    <h2>Log this trade's result</h2>
+    <div class="row">
+      <button class="btn-profit" onclick="logResult('profit')">✅ Profit</button>
+      <button class="btn-loss" onclick="logResult('loss')">❌ Loss</button>
+      <button class="btn-zero" onclick="logResult('zero')">0.00</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Protection settings</h2>
+    <label>Loss limit (consecutive losses before lock)</label>
+    <input type="number" id="lossLimit" value="4" min="1">
+    <label>Lock duration (minutes)</label>
+    <input type="number" id="lockMinutes" value="3" min="1">
+    <div class="checkbox-row">
+      <input type="checkbox" id="zeroIsLoss" checked>
+      <label style="margin:0" for="zeroIsLoss">Treat 0.00 result as LOSS</label>
+    </div>
+    <button class="btn-secondary" onclick="saveSettings()">Save settings</button>
+  </div>
+
+  <div class="card">
+    <h2>Stats</h2>
+    <div class="stats">
+      <div class="stat"><b id="statTotal">0</b><span>Trades</span></div>
+      <div class="stat"><b id="statWins">0</b><span>Profit</span></div>
+      <div class="stat"><b id="statLosses">0</b><span>Loss</span></div>
+      <div class="stat"><b id="statStreak">0 / 4</b><span>Streak</span></div>
+    </div>
+    <button class="btn-primary" onclick="testLock()">TEST: Lock now</button>
+    <button class="btn-secondary" onclick="resetAll()">Reset streak / Unlock</button>
+  </div>
+
+  <div class="note">
+    এটা আসল Android অ্যাপের মতো Quotex-এর স্ক্রিন নিজে পড়তে পারে না — একটা ওয়েবপেজের সেই permission নেই। প্রতিটা ট্রেডের পর নিজে Profit/Loss বাটনে ক্লিক করলে একই নিয়মে (৪ বার টানা লস হলে লক) হিসেব হবে। এই পেজটা কোনো ট্রেডিং প্ল্যাটফর্মে সংযুক্ত নয় এবং কোনো ট্রেড করে না।
+  </div>
+</div>
+
+<div class="lock-overlay" id="lockOverlay">
+  <div class="lockicon">🔒</div>
+  <h2>TradeGuard — Trading Paused</h2>
+  <p>Consecutive loss limit reached. Take a break — trading access resumes when the timer ends.</p>
+  <div class="timer" id="lockTimer">00:00</div>
+</div>
+
+<script>
+const KEYS = {
+  lockUntil:'tg_lockUntil', streak:'tg_streak', total:'tg_total', wins:'tg_wins',
+  losses:'tg_losses', limit:'tg_limit', minutes:'tg_minutes', zeroLoss:'tg_zeroLoss'
+};
+
+function getNum(key, def){ const v = localStorage.getItem(key); return v===null ? def : Number(v); }
+function getBool(key, def){ const v = localStorage.getItem(key); return v===null ? def : v==='true'; }
+function setVal(key, v){ localStorage.setItem(key, v); }
+
+function lockUntil(){ return getNum(KEYS.lockUntil, 0); }
+function isLocked(){ return lockUntil() > Date.now(); }
+function streak(){ return getNum(KEYS.streak, 0); }
+function limit(){ return Math.max(1, getNum(KEYS.limit, 4)); }
+function minutes(){ return Math.max(1, getNum(KEYS.minutes, 3)); }
+function zeroIsLoss(){ return getBool(KEYS.zeroLoss, true); }
+
+function record(profit, loss){
+  setVal(KEYS.total, getNum(KEYS.total,0)+1);
+  if(profit){ setVal(KEYS.wins, getNum(KEYS.wins,0)+1); setVal(KEYS.streak, 0); }
+  if(loss){ setVal(KEYS.losses, getNum(KEYS.losses,0)+1); setVal(KEYS.streak, streak()+1); }
+}
+
+function logResult(kind){
+  if(isLocked()) return;
+  if(kind==='profit'){ record(true,false); }
+  else if(kind==='loss'){ record(false,true); }
+  else if(kind==='zero'){
+    if(zeroIsLoss()) record(false,true);
+    else { setVal(KEYS.total, getNum(KEYS.total,0)+1); } // neutral: counted, streak untouched
+  }
+  if(streak() >= limit()){
+    setVal(KEYS.lockUntil, Date.now() + minutes()*60000);
+  }
+  refresh();
+}
+
+function testLock(){
+  saveSettings();
+  setVal(KEYS.lockUntil, Date.now() + minutes()*60000);
+  refresh();
+}
+
+function resetAll(){
+  localStorage.removeItem(KEYS.lockUntil);
+  setVal(KEYS.streak, 0);
+  setVal(KEYS.total, 0);
+  setVal(KEYS.wins, 0);
+  setVal(KEYS.losses, 0);
+  refresh();
+}
+
+function saveSettings(){
+  const l = parseInt(document.getElementById('lossLimit').value) || 4;
+  const m = parseInt(document.getElementById('lockMinutes').value) || 3;
+  const z = document.getElementById('zeroIsLoss').checked;
+  setVal(KEYS.limit, l);
+  setVal(KEYS.minutes, m);
+  setVal(KEYS.zeroLoss, z);
+  refresh();
+}
+
+let timerHandle = null;
+
+function refresh(){
+  document.getElementById('lossLimit').value = limit();
+  document.getElementById('lockMinutes').value = minutes();
+  document.getElementById('zeroIsLoss').checked = zeroIsLoss();
+
+  document.getElementById('statTotal').textContent = getNum(KEYS.total,0);
+  document.getElementById('statWins').textContent = getNum(KEYS.wins,0);
+  document.getElementById('statLosses').textContent = getNum(KEYS.losses,0);
+  document.getElementById('statStreak').textContent = streak() + ' / ' + limit();
+
+  const statusEl = document.getElementById('status');
+  const overlay = document.getElementById('lockOverlay');
+
+  if(isLocked()){
+    statusEl.textContent = 'Status: 🔒 LOCKED — protection active';
+    statusEl.className = 'status locked';
+    overlay.classList.add('open');
+    if(!timerHandle) timerHandle = setInterval(tickTimer, 1000);
+    tickTimer();
+  } else {
+    statusEl.textContent = 'Status: 🟢 ACTIVE — monitoring ready';
+    statusEl.className = 'status active';
+    overlay.classList.remove('open');
+    if(timerHandle){ clearInterval(timerHandle); timerHandle = null; }
+  }
+}
+
+function tickTimer(){
+  const remain = Math.max(0, lockUntil() - Date.now());
+  if(remain <= 0){ refresh(); return; }
+  const mm = String(Math.floor(remain/60000)).padStart(2,'0');
+  const ss = String(Math.floor((remain%60000)/1000)).padStart(2,'0');
+  document.getElementById('lockTimer').textContent = mm+':'+ss;
+}
+
+document.addEventListener('DOMContentLoaded', refresh);
+</script>
+</body>
+</html>
